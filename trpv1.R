@@ -6,20 +6,38 @@ logVar <- function(string, var) {
     print(paste(string, " ",var))
 }
 
+reduce_bg_noise <- function(cell) {
+    treshhold = 0
+    result = cell
+
+    if (cell > treshhold ) { 
+        result = cell
+    } 
+    return(result)
+}
+
 process_trpv_col <- function(in_trpv_column, bg, time, noise_index) {
 
-    trpv_column <- scale(in_trpv_column - bg)
+    trpv_column_no_bg_reduced <- vapply((in_trpv_column - bg), reduce_bg_noise, 0)
+    trpv_column <- trpv_column_no_bg_reduced
+
     y_lm <- trpv_column[1:noise_index] 
     x_lm <- time[1:noise_index]
     lin_reg <- lm(formula = y_lm ~ x_lm)
     
+    intercept_lm <- summary(lin_reg)$coefficients[1,1]
+
     x_lm_predict <- time[1:(length(time))]
     new_x_lm <- data.frame("x_lm"=x_lm_predict)
     new_y_lm <- predict(lin_reg, newdata=new_x_lm)
     
-    cleansed_trpv_column <- trpv_column - new_y_lm
+    cleansed_trpv_column <- trpv_column - new_y_lm + rep(intercept_lm, (length(time)))
     
-    return(cleansed_trpv_column)
+    mean_noaction <- mean(cleansed_trpv_column[1:20])
+    
+    normalized_trpv <- vapply(cleansed_trpv_column, function(x) x/mean_noaction, 0)
+    
+    return(normalized_trpv)
 }
 
 
@@ -40,7 +58,7 @@ get_sheet_data <- function(file_name, sheet_number, bg_index, noise_index){
 
 
 is_significant_column <- function(data_column, split) {
-    treshhold = 0.2
+    treshhold = 1.2
     result = 0
 
     action = data_column[split: (2*split)]
@@ -83,6 +101,13 @@ plot_trvp <- function(file_name, trpv1, aktph, filtered_trvp, filtered_aktph) {
         res       = 1200,
         pointsize = 4
     )
+     # png(png_output_file_name,
+        # width     = 9,
+        # height    = 4.5,
+        # units     = "in",
+        # res       = 120,
+        # pointsize = 4
+    # )
     par(c(2,2),
         xaxs     = "i",
         yaxs     = "i",
@@ -129,16 +154,19 @@ trpv_file <- function(in_file_name, in_bg_index, in_noise_index) {
     logVar("    BG index", bg_index)
     logVar("    index where noise ends", noise_index)
     
-    trpv1 <- get_sheet_data(file_name, 1, bg_index, in_noise_index)
-    aktph <- get_sheet_data(file_name, 2, bg_index, in_noise_index)
+    trpv1 <- get_sheet_data(file_name, 2, bg_index, in_noise_index)
+    print("trv done")
+    aktph <- get_sheet_data(file_name, 1, bg_index, in_noise_index)
 
     filtered_trvp <- filter_data(trpv1, aktph, noise_index, 1)
     filtered_aktph <- filter_data(trpv1, aktph, noise_index, 2)
+
 
     plot_trvp(out_base_name, trpv1, aktph, filtered_trvp, filtered_aktph)
    
     output_file_name = paste(out_base_name, "_out.xlsx", sep="")
     logVar("    [START] Dumping results into", output_file_name)
+    
     
     write.xlsx(trpv1, file=output_file_name, sheetName="processed_trpv1")
     write.xlsx(filtered_trvp, file=output_file_name, sheetName="reduced_trpv1", append=TRUE)
@@ -153,5 +181,8 @@ trpv_file <- function(in_file_name, in_bg_index, in_noise_index) {
 
 ################################# run-trvp1.R #########################################
 
-# global_noise_index = 120
-# trvp_file("04-19-16_slip1.xlsx",11, global_noise_index)
+global_noise_index = 120
+
+# Process files
+trpv_file("04-19-16_slip1.xlsx",11, global_noise_index)
+trpv_file("04-13-16_slip1.xlsx",15, global_noise_index)
