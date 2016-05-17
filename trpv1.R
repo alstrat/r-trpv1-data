@@ -40,16 +40,35 @@ process_trpv_col <- function(in_trpv_column, bg, time, noise_index) {
     return(normalized_trpv)
 }
 
+########################### Read XLSX ###########################
+get_first_data_length <- function(data_sheet){
+    first_row <- readColumns(data_sheet, startRow = 2, endRow = 2, startColumn = 1, endColumn = 100, header=FALSE)
+    first_blank_index <- min(which(first_row == ""))
+    return((first_blank_index - 1))
+}
 
-get_sheet_data <- function(file_name, sheet_number, bg_index, noise_index){
+get_sheet_first_data <- function(file_name, sheet_number, dataType){
+
+    file_wb <- loadWorkbook(file_name)
+    file_sheets <- getSheets(file_wb)
+    data_sheet <- file_sheets[[sheet_number]]
+    first_data_length <- get_first_data_length(data_sheet)
     raw <- read.xlsx2(file_name, 
             sheetIndex = sheet_number, 
-            colIndex = (1:bg_index),
-                  colClasses=rep("numeric",bg_index))
+            colIndex = (1:first_data_length),
+                  colClasses=rep(dataType, first_data_length))
 
-    bg <- data.matrix(raw[bg_index])[,1]
-    time <- data.matrix(raw[1])[,1]
-    trpv_data <- data.matrix(raw[2:(bg_index-1)])
+    data <- data.matrix(raw[1:first_data_length])
+    return(data)
+}
+
+get_input_sheet_data <- function(file_name, sheet_number, noise_index){
+    raw_data <- get_sheet_first_data(file_name, sheet_number, "numeric")
+    
+    bg_index <- ncol(raw_data)
+    bg <- raw_data[,bg_index]
+    time <- raw_data[,1]
+    trpv_data <- raw_data[,2:(bg_index-1)]
     
     processed_data <- apply(trpv_data, 2, process_trpv_col, bg=bg, time=time, noise_index=noise_index)
 
@@ -142,21 +161,19 @@ plot_trvp <- function(file_name, trpv1, aktph, filtered_trvp, filtered_aktph) {
  }
 
 
-trpv_file <- function(in_file_name, in_bg_index, in_noise_index) {
+trpv_file <- function(in_file_name, in_noise_index) {
 
     file_name <- paste("in/", in_file_name, sep="")
     out_base_name <- paste("out/", (sub(".xlsx", "", in_file_name)), sep="")
     
     noise_index <- as.numeric(in_noise_index)
-    bg_index <- as.numeric(in_bg_index)
 
     logVar("[START] Processing", file_name)
-    logVar("    BG index", bg_index)
     logVar("    index where noise ends", noise_index)
     
-    trpv1 <- get_sheet_data(file_name, 2, bg_index, in_noise_index)
+    trpv1 <- get_input_sheet_data(file_name, 2, in_noise_index)
     print("trv done")
-    aktph <- get_sheet_data(file_name, 1, bg_index, in_noise_index)
+    aktph <- get_input_sheet_data(file_name, 1, in_noise_index)
 
     filtered_trvp <- filter_data(trpv1, aktph, noise_index, 1)
     filtered_aktph <- filter_data(trpv1, aktph, noise_index, 2)
@@ -176,7 +193,17 @@ trpv_file <- function(in_file_name, in_bg_index, in_noise_index) {
     
     logVar("[END] Processing", file_name)
     
+    return(output_file_name)
+    
 }
 
+trpv_knn <- function(data_file) {
+    trvp <- get_sheet_first_data(data_file, 1, "numeric")
+    print(head(trvp))
+}
+################################# test run-trvp1.R #########################################
 
-################################# run-trvp1.R #########################################
+# global_noise_index = 120
+
+# data_file <- trpv_file("04-13-16_slip1.xlsx", global_noise_index)
+# trpv_knn(data_file)
